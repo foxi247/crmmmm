@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: foxai
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  nextjs:
+    build:
+      context: ./apps/nextjs-dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/foxai
+      NEXTAUTH_SECRET: change-me-in-production-32chars!!
+      NEXTAUTH_URL: http://localhost:3000
+      AI_SERVICE_URL: http://ai-service:8000
+    depends_on:
+      - postgres
+
+  ai-service:
+    build:
+      context: ./apps/python-ai-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      NEXTJS_API_URL: http://nextjs:3000
+      CHROMA_PERSIST_DIR: /data/chroma
+    volumes:
+      - chroma_data:/data/chroma
+
+volumes:
+  postgres_data:
+  chroma_data:

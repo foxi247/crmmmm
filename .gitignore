@@ -1,0 +1,32 @@
+# Node
+node_modules/
+.next/
+dist/
+.turbo/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Data
+data/
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

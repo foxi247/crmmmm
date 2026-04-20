@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
+
+enum MessengerType {
+  TELEGRAM
+  WHATSAPP
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum ChatSessionStatus {
+  ACTIVE
+  CLOSED
+  HUMAN_TAKEOVER
+}
+
+// ─────────────────────────────────────────
+// MERCHANT
+// ─────────────────────────────────────────
+
+model Merchant {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  slug      String   @unique
+  logoUrl   String?
+  timezone  String   @default("UTC")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  botSettings       BotSettings?
+  integrations      Integration[]
+  productCategories ProductCategory[]
+  products          Product[]
+  customers         Customer[]
+  chatSessions      ChatSession[]
+  orders            Order[]
+
+  @@index([slug])
+  @@index([email])
+}
+
+// ─────────────────────────────────────────
+// BOT SETTINGS
+// ─────────────────────────────────────────
+
+model BotSettings {
+  id              String  @id @default(cuid())
+  merchantId      String  @unique
+  systemPrompt    String  @default("You are a helpful sales assistant.")
+  tone            String  @default("friendly")
+  language        String  @default("en")
+  welcomeMessage  String?
+  fallbackMessage String?
+  enableRag       Boolean @default(true)
+  enableOrders    Boolean @default(true)
+  humanTrigger    String  @default("human")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────
+// INTEGRATION
+// ─────────────────────────────────────────
+
+model Integration {
+  id            String        @id @default(cuid())
+  merchantId    String
+  type          MessengerType
+  token         String
+  webhookSecret String?
+  isActive      Boolean       @default(true)
+  metadata      Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, type])
+  @@index([merchantId])
+}
+
+// ─────────────────────────────────────────
+// PRODUCT CATEGORY
+// ─────────────────────────────────────────
+
+model ProductCategory {
+  id          String    @id @default(cuid())
+  merchantId  String
+  name        String
+  description String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  merchant Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([merchantId, name])
+  @@index([merchantId])
+}
+
+// ─────────────────────────────────────────
+// PRODUCT
+// ─────────────────────────────────────────
+
+model Product {
+  id          String   @id @default(cuid())
+  merchantId  String
+  categoryId  String?
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  stock       Int      @default(0)
+  unit        String?
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  merchant   Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  category   ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  orderItems OrderItem[]
+
+  @@index([merchantId])
+  @@index([categoryId])
+  @@index([merchantId, isActive])
+}
+
+// ─────────────────────────────────────────
+// CUSTOMER
+// ─────────────────────────────────────────
+
+model Customer {
+  id           String   @id @default(cuid())
+  merchantId   String
+  externalId   String
+  messengerType MessengerType
+  name         String?
+  phone        String?
+  username     String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  merchant     Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  chatSessions ChatSession[]
+  orders       Order[]
+
+  @@unique([merchantId, externalId, messengerType])
+  @@index([merchantId])
+}
+
+// ─────────────────────────────────────────
+// CHAT SESSION
+// ─────────────────────────────────────────
+
+model ChatSession {
+  id          String            @id @default(cuid())
+  merchantId  String
+  customerId  String
+  status      ChatSessionStatus @default(ACTIVE)
+  context     Json?
+  startedAt   DateTime          @default(now())
+  closedAt    DateTime?
+  updatedAt   DateTime          @updatedAt
+
+  merchant Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customer Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([merchantId])
+  @@index([customerId])
+  @@index([merchantId, status])
+}
+
+// ─────────────────────────────────────────
+// CHAT MESSAGE
+// ─────────────────────────────────────────
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      ChatRole
+  content   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([sessionId, createdAt])
+}
+
+// ─────────────────────────────────────────
+// ORDER
+// ─────────────────────────────────────────
+
+model Order {
+  id           String      @id @default(cuid())
+  merchantId   String
+  customerId   String
+  sessionId    String?
+  status       OrderStatus @default(PENDING)
+  totalAmount  Decimal     @db.Decimal(10, 2)
+  customerName String?
+  phone        String?
+  address      String?
+  notes        String?
+  metadata     Json?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  merchant   Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@index([merchantId])
+  @@index([customerId])
+  @@index([merchantId, status])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────
+// ORDER ITEM
+// ─────────────────────────────────────────
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String?
+  name      String
+  price     Decimal @db.Decimal(10, 2)
+  quantity  Int
+  subtotal  Decimal @db.Decimal(10, 2)
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
